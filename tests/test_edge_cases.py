@@ -81,7 +81,7 @@ def test_registration_conflict():
     # Register duplicate username in same org -> 409 USERNAME_TAKEN
     r = client.post("/auth/register", json={"org_name": org_name, "username": "user1", "password": "password"})
     assert r.status_code == 409
-    assert r.json()["code"] == "USERNAME TAKEN"
+    assert r.json()["code"] == "USERNAME_TAKEN"
 
 
 def test_timezone_normalization():
@@ -120,12 +120,12 @@ def test_booking_validation_edge_cases():
     # 1. Past start_time -> 400
     r = client.post("/bookings", json={"room_id": room_id, "start_time": _future(-2), "end_time": _future(1)}, headers=headers)
     assert r.status_code == 400
-    assert r.json()["code"] == "INVALID BOOKING WINDOW"
+    assert r.json()["code"] == "INVALID_BOOKING_WINDOW"
     
     # 2. end_time <= start_time -> 400
     r = client.post("/bookings", json={"room_id": room_id, "start_time": _future(5), "end_time": _future(4)}, headers=headers)
     assert r.status_code == 400
-    assert r.json()["code"] == "INVALID BOOKING WINDOW"
+    assert r.json()["code"] == "INVALID_BOOKING_WINDOW"
     
     # 3. Non-whole hours -> 400
     # E.g. 1 hour 30 mins
@@ -133,12 +133,12 @@ def test_booking_validation_edge_cases():
     end = (datetime.fromisoformat(start) + timedelta(hours=1, minutes=30)).isoformat()
     r = client.post("/bookings", json={"room_id": room_id, "start_time": start, "end_time": end}, headers=headers)
     assert r.status_code == 400
-    assert r.json()["code"] == "INVALID BOOKING WINDOW"
+    assert r.json()["code"] == "INVALID_BOOKING_WINDOW"
     
     # 4. Duration > 8 hours -> 400
     r = client.post("/bookings", json={"room_id": room_id, "start_time": _future(5), "end_time": _future(14)}, headers=headers)
     assert r.status_code == 400
-    assert r.json()["code"] == "INVALID BOOKING WINDOW"
+    assert r.json()["code"] == "INVALID_BOOKING_WINDOW"
     
     # 5. Pricing accuracy: rate * duration
     r = client.post("/bookings", json={"room_id": room_id, "start_time": _future(5), "end_time": _future(7)}, headers=headers)
@@ -173,12 +173,12 @@ def test_booking_overlap_back_to_back():
     # 3. Direct overlap (hours [11, 13]) -> 409 ROOM_CONFLICT
     r = client.post("/bookings", json={"room_id": room_id, "start_time": _future(11), "end_time": _future(13)}, headers=headers)
     assert r.status_code == 409
-    assert r.json()["code"] == "ROOM CONFLICT"
+    assert r.json()["code"] == "ROOM_CONFLICT"
     
     # 4. Nested overlap (hours [10, 11]) -> 409 ROOM_CONFLICT
     r = client.post("/bookings", json={"room_id": room_id, "start_time": _future(10), "end_time": _future(11)}, headers=headers)
     assert r.status_code == 409
-    assert r.json()["code"] == "ROOM CONFLICT"
+    assert r.json()["code"] == "ROOM_CONFLICT"
 
 
 def test_booking_quota_limit():
@@ -209,7 +209,7 @@ def test_booking_quota_limit():
     # 4th booking in 24h window -> 409 QUOTA_EXCEEDED
     r = client.post("/bookings", json={"room_id": room1["id"], "start_time": _future(8), "end_time": _future(9)}, headers=headers)
     assert r.status_code == 409
-    assert r.json()["code"] == "QUOTA EXCEEDED"
+    assert r.json()["code"] == "QUOTA_EXCEEDED"
     
     # Booking outside 24h window (e.g. 26 hours in future) -> Allowed (doesn't count towards the rolling 24h limit)
     r = client.post("/bookings", json={"room_id": room1["id"], "start_time": _future(26), "end_time": _future(27)}, headers=headers)
@@ -237,7 +237,7 @@ def test_rate_limiting():
     # The 21st request must be rate limited with 429
     r = client.post("/bookings", json={"room_id": room_id, "start_time": _future(5), "end_time": _future(6)}, headers=headers)
     assert r.status_code == 429
-    assert r.json()["code"] == "RATE LIMITED"
+    assert r.json()["code"] == "RATE_LIMITED"
 
 
 def test_cancellation_refunds():
@@ -270,7 +270,7 @@ def test_cancellation_refunds():
     # Already cancelled -> 409
     r = client.post(f"/bookings/{b1['id']}/cancel", headers=headers_m1)
     assert r.status_code == 409
-    assert r.json()["code"] == "ALREADY CANCELLED"
+    assert r.json()["code"] == "ALREADY_CANCELLED"
     
     # 2. 24 <= Notice < 48 hours -> 50% refund (with half-cent rounding check)
     # price_cents = 151. 50% refund = 75.5 -> half-up rounds to 76 cents.
@@ -471,4 +471,4 @@ def test_admin_export_cross_org():
     # Admin 2 tries to export room from Org 1 -> 404 ROOM_NOT_FOUND
     r = client.get(f"/admin/export?room_id={room_o1['id']}&include_all=true", headers={"Authorization": f"Bearer {t_a2}"})
     assert r.status_code == 404
-    assert r.json()["code"] == "ROOM NOT FOUND"
+    assert r.json()["code"] == "ROOM_NOT_FOUND"
