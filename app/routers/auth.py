@@ -23,37 +23,53 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", status_code=201)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
-    org = db.query(Organization).filter(Organization.name == payload.org_name).first()
-    role = "admin" if org is None else "member"
-    if org is None:
-        org = Organization(name=payload.org_name)
-        db.add(org)
+    from sqlalchemy.exc import IntegrityError
+    try:
+        org = db.query(Organization).filter(Organization.name == payload.org_name).first()
+        role = "admin" if org is None else "member"
+        if org is None:
+            try:
+                org = Organization(name=payload.org_name)
+                db.add(org)
+                db.commit()
+                db.refresh(org)
+            except Exception:
+                db.rollback()
+                org = db.query(Organization).filter(Organization.name == payload.org_name).first()
+                if org is None:
+                    raise
+                role = "member"
+
+        existing = (
+            db.query(User)
+            .filter(User.org_id == org.id, User.username == payload.username)
+            .first()
+        )
+        if existing is not None:
+            raise AppError(409, "USERNAME_TAKEN", "Username already taken")
+
+        user = User(
+            org_id=org.id,
+            username=payload.username,
+            hashed_password=hash_password(payload.password),
+            role=role,
+        )
+        db.add(user)
         db.commit()
-        db.refresh(org)
-
-    existing = (
-        db.query(User)
-        .filter(User.org_id == org.id, User.username == payload.username)
-        .first()
-    )
-    if existing is not None:
-        raise AppError(409, "USERNAME_TAKEN", "Username already taken")
-
-    user = User(
-        org_id=org.id,
-        username=payload.username,
-        hashed_password=hash_password(payload.password),
-        role=role,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return {
-        "user_id": user.id,
-        "org_id": org.id,
-        "username": user.username,
-        "role": user.role,
-    }
+        db.refresh(user)
+        return {
+            "user_id": user.id,
+            "org_id": org.id,
+            "username": user.username,
+            "role": user.role,
+        }
+    except Exception as e:
+        db.rollback()
+        if isinstance(e, AppError):
+            raise
+        if isinstance(e, IntegrityError) or "UNIQUE constraint" in str(e):
+            raise AppError(409, "USERNAME_TAKEN", "Username already taken")
+        raise
 
 
 @router.post("/login")

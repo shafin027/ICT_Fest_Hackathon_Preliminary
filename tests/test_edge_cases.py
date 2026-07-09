@@ -472,3 +472,36 @@ def test_admin_export_cross_org():
     r = client.get(f"/admin/export?room_id={room_o1['id']}&include_all=true", headers={"Authorization": f"Bearer {t_a2}"})
     assert r.status_code == 404
     assert r.json()["code"] == "ROOM_NOT_FOUND"
+
+
+def test_concurrency_registration():
+    """Test concurrent registration of the same username in the same organization; only one should succeed, others return 409."""
+    org_name = f"org-conc-reg-{time.time()}"
+    username = "user-reg"
+    password = "password"
+    
+    # Pre-create the organization to ensure both concurrent requests try to register the user in the same org
+    client.post("/auth/register", json={"org_name": org_name, "username": "admin", "password": "password"})
+    
+    results = []
+    def make_registration():
+        c = TestClient(app)
+        try:
+            r = c.post("/auth/register", json={"org_name": org_name, "username": username, "password": password})
+            results.append((r.status_code, r.json()))
+        except Exception as e:
+            results.append((999, str(e)))
+            
+    threads = [threading.Thread(target=make_registration) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+        
+    success = [r for r in results if r[0] == 201]
+    conflict = [r for r in results if r[0] == 409]
+    
+    assert len(success) == 1, f"Expected exactly 1 success, got {len(success)}: {results}"
+    assert len(conflict) == 4, f"Expected 4 conflicts, got {len(conflict)}: {results}"
+    assert all(c[1]["code"] == "USERNAME_TAKEN" for c in conflict)
+

@@ -32,4 +32,18 @@ def record_cancel(room_id: int, price_cents: int) -> None:
 
 def get(room_id: int) -> dict:
     with _lock:
+        if room_id not in _stats:
+            from ..database import SessionLocal
+            from ..models import Booking
+            db = SessionLocal()
+            try:
+                bookings = db.query(Booking).filter(
+                    Booking.room_id == room_id,
+                    Booking.status == "confirmed"
+                ).all()
+                count = len(bookings)
+                revenue = sum(b.price_cents for b in bookings)
+                _stats[room_id] = {"count": count, "revenue": revenue}
+            finally:
+                db.close()
         return _stats.get(room_id, {"count": 0, "revenue": 0}).copy()
