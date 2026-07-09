@@ -132,3 +132,32 @@
 - **Bug**: Availability cache is not invalidated on booking cancellation. Usage report cache is not invalidated on new bookings. Stale cached results are served.
 - **Rule violated**: Rules 12, 13 — "Must reflect the current state immediately"
 - **Fix**: Disabled caching entirely for both endpoints. The queries are simple enough that caching is unnecessary and correctness is paramount.
+
+## Bug 20: Registration unique constraint violation crashes on concurrent requests (High)
+
+- **File**: `app/routers/auth.py`
+- **Bug**: Under high concurrent load, two requests registering the same username concurrently can bypass the application-level existence check and fail at the db commit step, raising a raw `IntegrityError` resulting in a 500 error instead of a 409.
+- **Rule violated**: Rule 15 — "A duplicate username within the org -> 409 USERNAME_TAKEN"
+- **Fix**: Wrapped database registration commits in a try-except block, catching `IntegrityError` and raising a clean `409 USERNAME_TAKEN` AppError.
+
+## Bug 21: Malformed JWT subject claim crashes auth middleware (Medium)
+
+- **Files**: `app/auth.py`, `app/routers/auth.py`
+- **Bug**: Directly casting the token's subject claim to an integer `int(payload["sub"])` raises a raw `KeyError`/`ValueError` if the claim is missing or malformed, triggering a 500 server crash.
+- **Rule violated**: Rule 8 — "Missing/invalid/expired/blacklisted tokens -> 401"
+- **Fix**: Caught `KeyError`, `ValueError`, and `TypeError` when parsing `sub` claims, converting them to clean `401 UNAUTHORIZED` AppErrors.
+
+## Bug 22: Missing positive boundary validation on room creation (Medium)
+
+- **File**: `app/schemas.py`
+- **Bug**: Room creation endpoint accepted negative or zero values for capacity and hourly rate cents, which violates the domain model's business logic.
+- **Rule violated**: Input validation - validate inputs at system boundaries
+- **Fix**: Added Pydantic `Field(..., gt=0)` validators on `capacity` and `hourly_rate_cents`.
+
+## Bug 23: Room statistics not initialized on server restart (Medium)
+
+- **File**: `app/services/stats.py`
+- **Bug**: Room statistics were tracked purely in memory without initialization on app start. Restarting the server/container or querying against pre-seeded data returned 0 bookings and revenue.
+- **Rule violated**: Rule 14 — "Always equals the values derivable from the bookings themselves"
+- **Fix**: Implemented lazy database loading using `SessionLocal` to fetch and compute stats from existing bookings when a room is queried for the first time.
+
