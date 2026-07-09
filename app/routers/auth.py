@@ -99,7 +99,11 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     if is_refresh_revoked(data.get("jti", "")):
         raise AppError(401, "UNAUTHORIZED", "Refresh token already used")
     revoke_refresh_token(data["jti"])
-    user = db.query(User).filter(User.id == int(data["sub"])).first()
+    try:
+        user_id = int(data["sub"])
+    except (KeyError, ValueError, TypeError):
+        raise AppError(401, "UNAUTHORIZED", "Invalid token claims")
+    user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise AppError(401, "UNAUTHORIZED", "Unknown user")
     return {
