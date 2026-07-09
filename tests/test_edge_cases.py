@@ -452,3 +452,23 @@ def test_concurrency_cancellation():
     refund_logs = db.query(RefundLog).filter(RefundLog.booking_id == booking["id"]).all()
     assert len(refund_logs) == 1
     db.close()
+
+
+def test_admin_export_cross_org():
+    """Test that /admin/export fails with 404 when querying a room belonging to another organization."""
+    org1 = f"org-exp-1-{time.time()}"
+    org2 = f"org-exp-2-{time.time()}"
+    
+    # Org 1: Admin & Room
+    client.post("/auth/register", json={"org_name": org1, "username": "admin", "password": "password"})
+    t_a1 = client.post("/auth/login", json={"org_name": org1, "username": "admin", "password": "password"}).json()["access_token"]
+    room_o1 = client.post("/rooms", json={"name": "Room O1", "capacity": 5, "hourly_rate_cents": 1000}, headers={"Authorization": f"Bearer {t_a1}"}).json()
+    
+    # Org 2: Admin
+    client.post("/auth/register", json={"org_name": org2, "username": "admin", "password": "password"})
+    t_a2 = client.post("/auth/login", json={"org_name": org2, "username": "admin", "password": "password"}).json()["access_token"]
+    
+    # Admin 2 tries to export room from Org 1 -> 404 ROOM_NOT_FOUND
+    r = client.get(f"/admin/export?room_id={room_o1['id']}&include_all=true", headers={"Authorization": f"Bearer {t_a2}"})
+    assert r.status_code == 404
+    assert r.json()["code"] == "ROOM_NOT_FOUND"
